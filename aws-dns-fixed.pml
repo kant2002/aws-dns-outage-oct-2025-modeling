@@ -54,60 +54,60 @@ active [NUM_ENACTORS] proctype Enactor() {
             printf("Enactor[%d]: Staleness check passed for Plan v%d\n", 
                    my_id, my_plan);
             atomic{ 
-            if
-            :: !plan_deleted[my_plan] ->
-                printf("Enactor[%d]: Applying Plan v%d to Route53\n", 
-                       my_id, my_plan);
-                
-                /* Fix: Make plan application atomic with state update */
-                    current_plan = my_plan;
-                    dns_valid = true;
-                    initialized = true;
-                   
-                    if 
-                    :: (my_plan > highest_plan_applied) ->
-                        highest_plan_applied = my_plan;
-                    :: else -> skip;
-                    fi;
-                
-                
-                printf("Enactor[%d]: Starting safe cleanup after applying v%d\n", 
-                       my_id, my_plan);
-                
-                i = 1;
-                do
-                :: (i < my_plan) ->
-                atomic {
-                    if
-                    :: (my_plan - i >= PLAN_AGE_THRESHOLD && !plan_deleted[i]) ->
-                        
-                        /* Fix */
-                        
-                            if
-                            :: (current_plan != i) ->
+                if
+                :: !plan_deleted[my_plan] ->
+                    printf("Enactor[%d]: Applying Plan v%d to Route53\n", 
+                        my_id, my_plan);
+                    
+                    /* Fix: Make plan application atomic with state update */
+                        current_plan = my_plan;
+                        dns_valid = true;
+                        initialized = true;
+                    
+                        if 
+                        :: (my_plan > highest_plan_applied) ->
+                            highest_plan_applied = my_plan;
+                        :: else -> skip;
+                        fi;
+                    
+                    
+                    printf("Enactor[%d]: Starting safe cleanup after applying v%d\n", 
+                        my_id, my_plan);
+                    
+                    i = 1;
+                    do
+                    :: (i < my_plan) ->
+                    atomic {
+                        if
+                        :: (my_plan - i >= PLAN_AGE_THRESHOLD && !plan_deleted[i]) ->
+                            
+                            /* Fix */
+                            
+                                if
+                                :: (current_plan != i) ->
+                                    
+                                    printf("Enactor[%d]: Safely deleting old Plan v%d\n", 
+                                        my_id, i);
+                                    plan_deleted[i] = true;
+                                :: else ->
+                                    /* Fix: don't delete active plan */
+                                    printf("Enactor[%d]: Safety - Refusing to delete active Plan v%d\n", 
+                                        my_id, i);
                                 
-                                printf("Enactor[%d]: Safely deleting old Plan v%d\n", 
-                                       my_id, i);
-                                plan_deleted[i] = true;
-                            :: else ->
-                                /* Fix: don't delete active plan */
-                                printf("Enactor[%d]: Safety - Refusing to delete active Plan v%d\n", 
-                                       my_id, i);
-                              
-                            fi;
-                     
+                                fi;
                         
-                    :: else -> skip;
-                    fi;
-                }
-                    i++;
-                :: (i >= my_plan) -> break;
-                od;
-                
-            :: else ->
-                printf("Enactor[%d]: Cannot apply Plan v%d - already deleted\n", 
-                       my_id, my_plan);
-            fi;
+                            
+                        :: else -> skip;
+                        fi;
+                    }
+                        i++;
+                    :: (i >= my_plan) -> break;
+                    od;
+                    
+                :: else ->
+                    printf("Enactor[%d]: Cannot apply Plan v%d - already deleted\n", 
+                        my_id, my_plan);
+                fi;
             } 
         :: else ->
             printf("Enactor[%d]: Staleness check failed for Plan v%d\n", 
