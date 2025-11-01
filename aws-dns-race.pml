@@ -15,6 +15,9 @@ gcc -O2 -o pan pan.c
 # 3) Verify the named LTL (only this one)
 ./pan -a -N no_dns_deletion_on_regression
 
+And to verify another LTL propert
+./pan -a -N never_delete_active
+
 # 4) Replay the counterexample with variable values
 spin -t -p -g -l -k aws-dns-race.pml.trail aws-dns-race.pml
 

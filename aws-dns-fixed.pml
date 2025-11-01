@@ -122,7 +122,7 @@ active [NUM_ENACTORS] proctype Enactor() {
     printf("Enactor[%d]: Shutting down\n", my_id);
 }
 
-/* Invariant */
+/* Invariants */
 
 /* Property: DNS should never be deleted due to plan regression */
 ltl no_dns_deletion_on_regression {
