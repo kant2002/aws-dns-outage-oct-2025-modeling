@@ -1,5 +1,5 @@
 /*
- * AWS DynamoDB DNS Race Condition - Promela Model
+ * AWS DynamoDB DNS Race Condition Fix - Promela Model
  *
  * Models the October 2025 AWS DynamoDB outage caused by a race condition
  * in the DNS management system.
@@ -88,66 +88,61 @@ active [NUM_ENACTORS] proctype Enactor() {
                    my_id, my_plan, snapshot_current);
 
 
-            if
-            :: !plan_deleted[my_plan] ->
+            atomic{
+                if
+                :: !plan_deleted[my_plan] ->
 
                 printf("Enactor[%d]: Applying Plan v%d to Route53\n", my_id, my_plan);
-                current_plan = my_plan;
-                dns_valid = true;
-                initialized = true;
+                    /* Fix: Make plan application atomic with state update */
+                        current_plan = my_plan;
+                        dns_valid = true;
+                        initialized = true;
 
-                if
-                :: (my_plan > highest_plan_applied) ->
-                    highest_plan_applied = my_plan;
-                fi
-                /*  Clean-up  */
-                /* Per AWS report: When the second Enactor completed its
-                 * endpoint updates, it then invoked the plan clean-up process,
-                 * which identifies plans that are significantly older than the
-                 * one it just applied and deletes them.
-                 */
-                printf("Enactor[%d]: Starting cleanup after applying v%d\n",
-                       my_id, my_plan);
-
-                i = 1;
-                do
-                :: (i < my_plan) ->
-                    /* Delete plans that are "significantly older" */
-                    if
-                    :: (my_plan - i >= PLAN_AGE_THRESHOLD && !plan_deleted[i]) ->
-                        printf("Enactor[%d]: Deleting old Plan v%d (age: %d)\n",
-                               my_id, i, my_plan - i);
-                        plan_deleted[i] = true;
-
-
-                        /* Per AWS report: The second Enactor's clean-up process
-                         * then deleted this older plan because it was many
-                         * generations older than the plan it had just applied.
-                         * As this plan was deleted, all IP addresses for the
-                         * regional endpoint were immediately removed.
-                         */
                         if
-                        :: (current_plan == i) ->
-                            printf("Enactor[%d]: Critical - active plan v%d was deleted!\n",
-                                   my_id, i);
-                            printf("Enactor[%d]: Removing all DNS records \n",
-                                   my_id);
-                            dns_valid = false;
-                            current_plan = 0;
-                            printf("Enactor[%d]: System now in inconsistent state\n", my_id);
+                        :: (my_plan > highest_plan_applied) ->
+                            highest_plan_applied = my_plan;
+                        fi
+                    /*  Clean-up  */
+                    /* Per AWS report: When the second Enactor completed its
+                     * endpoint updates, it then invoked the plan clean-up process,
+                     * which identifies plans that are significantly older than the
+                     * one it just applied and deletes them.
+                     */
+                    printf("Enactor[%d]: Starting cleanup after applying v%d\n",
+                        my_id, my_plan);
+
+                    i = 1;
+                    do
+                    :: (i < my_plan) ->
+                    /* Delete plans that are "significantly older" */
+                    atomic {
+                        if
+                        :: (my_plan - i >= PLAN_AGE_THRESHOLD && !plan_deleted[i]) ->
+
+                            /* Fix */
+                            if
+                            :: (current_plan == i) ->
+                                /* Fix: don't delete active plan */
+                                printf("Enactor[%d]: Safety - Refusing to delete active Plan v%d\n",
+                                    my_id, i);
+                            :: else ->
+                                printf("Enactor[%d]: Safely deleting old Plan v%d\n",
+                                    my_id, i);
+                                plan_deleted[i] = true;
+                            fi;
                         :: else -> skip;
                         fi;
-                    :: else -> skip;
-                    fi;
-                    i++;
-                :: (i >= my_plan) -> break;
-                od;
+                    }
+                        i++;
+                    :: (i >= my_plan) -> break;
+                    od;
 
-            :: else ->
-                printf("Enactor[%d]: Error - Plan v%d already deleted!\n",
-                       my_id, my_plan);
-            fi;
+                :: else ->
+                    printf("Enactor[%d]: Error - Plan v%d already deleted!\n",
+                        my_id, my_plan);
+                fi;
 
+            }
         :: else ->
             printf("Enactor[%d]: Staleness check failed for Plan v%d (current: v%d)\n",
                    my_id, my_plan, snapshot_current);
